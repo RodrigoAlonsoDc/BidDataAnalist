@@ -109,7 +109,7 @@ else:
         costo_cat = df.groupby('categoria')['costo_perdida'].sum().reset_index()
         fig1 = px.bar(costo_cat, x='categoria', y='costo_perdida', 
                       color='categoria', text_auto='.2s',
-                      color_discrete_sequence=px.colors.sequential.Agalmatolite)
+                      color_discrete_sequence=px.colors.sequential.Magma)
         fig1.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
         st.plotly_chart(fig1, use_container_width=True)
 
