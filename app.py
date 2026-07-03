@@ -12,31 +12,52 @@ from datetime import datetime
 # ----------------------------------------
 st.set_page_config(
     page_title="Dashboard Analítica - Supermercados Metro",
-    page_icon="🛒",
+    page_icon="M",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Estilo personalizado (Aesthetic CSS)
+# Estilo personalizado (Aesthetic CSS tipo Metro)
 st.markdown("""
     <style>
     .main {
-        background-color: #0f111a;
-        color: #ffffff;
+        background-color: #F8F9FA;
+        color: #333333;
     }
     h1, h2, h3 {
-        color: #00d2ff;
+        color: #E3000F;
         font-family: 'Inter', sans-serif;
+        font-weight: 800;
     }
     .stMetric {
-        background-color: #1a1d2d;
+        background-color: #FFFFFF;
         padding: 20px;
-        border-radius: 10px;
-        border: 1px solid #2d3142;
+        border-radius: 8px;
+        border: 1px solid #EAEAEA;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
-    /* Estilizar la barra lateral (filtros) */
+    .stMetric label {
+        color: #666666 !important;
+    }
     [data-testid="stSidebar"] {
-        background-color: #161824;
+        background-color: #FFDE00;
+    }
+    /* Estilo de botones */
+    .stButton>button {
+        background-color: #E3000F;
+        color: white;
+        border-radius: 5px;
+        border: none;
+        font-weight: bold;
+    }
+    .stButton>button:hover {
+        background-color: #C8000C;
+        color: white;
+    }
+    /* Tab labels */
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-weight: bold;
+        color: #333333;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -96,7 +117,7 @@ with st.spinner("Cargando datos desde Supabase..."):
 # 4. FILTROS (BARRA LATERAL)
 # ----------------------------------------
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Metro_Per%C3%BA_logo.svg/512px-Metro_Per%C3%BA_logo.svg.png", width=150)
-st.sidebar.title("🔍 Filtros")
+st.sidebar.title("Filtros")
 
 # Filtro de Categoría
 categorias = ["Todas"] + list(df_mermas['categoria'].dropna().unique())
@@ -121,7 +142,7 @@ if motivo_filtro != "Todos":
 # ----------------------------------------
 # 5. DASHBOARD PRINCIPAL Y PESTAÑAS
 # ----------------------------------------
-st.title("🛒 Dashboard de Mermas e Inventario")
+st.title("Dashboard de Mermas e Inventario")
 st.markdown("Sistema de Analítica de Big Data para la Mitigación de Mermas - **Supermercados Metro**")
 
 if df_mermas.empty:
@@ -129,7 +150,7 @@ if df_mermas.empty:
     st.stop()
 
 # Crear Pestañas (Tabs) para separar Mermas de Stocks
-tab1, tab2, tab3 = st.tabs(["📉 Análisis de Mermas", "📦 Verificación de Stock", "🧾 Generar Boleta"])
+tab1, tab2, tab3 = st.tabs(["Análisis de Mermas", "Verificación de Stock", "Generar Boleta"])
 
 # ===== PESTAÑA 1: MERMAS =====
 with tab1:
@@ -152,7 +173,7 @@ with tab1:
     # Gráficos
     col_c1, col_c2 = st.columns(2)
     with col_c1:
-        st.markdown("### 💸 Costo por Producto (Top 10)")
+        st.markdown("### Costo por Producto (Top 10)")
         if not mermas_filtrado.empty:
             costo_prod = mermas_filtrado.groupby('nombre')['costo_perdida'].sum().reset_index().sort_values(by='costo_perdida', ascending=False).head(10)
             fig1 = px.bar(costo_prod, x='nombre', y='costo_perdida', color='nombre', color_discrete_sequence=px.colors.sequential.Magma)
@@ -160,14 +181,14 @@ with tab1:
             st.plotly_chart(fig1, use_container_width=True)
 
     with col_c2:
-        st.markdown("### ⚠️ Motivos")
+        st.markdown("### Motivos")
         if not mermas_filtrado.empty:
             motivos_df = mermas_filtrado.groupby('motivo')['cantidad'].sum().reset_index()
             fig2 = px.pie(motivos_df, values='cantidad', names='motivo', hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
             fig2.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
             st.plotly_chart(fig2, use_container_width=True)
             
-    st.subheader("🔍 Tabla de Registros de Mermas")
+    st.subheader("Tabla de Registros de Mermas")
     st.dataframe(mermas_filtrado[['fecha', 'nombre', 'categoria', 'motivo', 'cantidad', 'costo_perdida']].sort_values(by='fecha', ascending=False), use_container_width=True)
 
 
@@ -179,7 +200,7 @@ with tab2:
     if not inv_filtrado.empty:
         # Calcular Alerta
         inv_show = inv_filtrado[['nombre', 'categoria', 'stock_actual', 'umbral_minimo', 'fecha_actualizacion']].copy()
-        inv_show['Estado'] = inv_show.apply(lambda row: '⚠️ PELIGRO (Bajo Umbral)' if row['stock_actual'] < row['umbral_minimo'] else '✅ OK', axis=1)
+        inv_show['Estado'] = inv_show.apply(lambda row: 'PELIGRO (Bajo Umbral)' if row['stock_actual'] < row['umbral_minimo'] else 'OK', axis=1)
         
         # Resumen de alertas
         alertas_count = len(inv_show[inv_show['Estado'].str.contains('PELIGRO')])
@@ -192,13 +213,13 @@ with tab2:
         fig3.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
         st.plotly_chart(fig3, use_container_width=True)
         
-        st.subheader("🔍 Tabla de Inventarios")
+        st.subheader("Tabla de Inventarios")
         st.dataframe(inv_show.sort_values(by='stock_actual'), use_container_width=True)
     else:
         st.info("No hay datos de inventario para esta selección.")
 # ===== PESTAÑA 3: GENERAR BOLETA =====
 with tab3:
-    st.subheader("🧾 Generador Rápido de Boletas")
+    st.subheader("Generador Rápido de Boletas")
     st.markdown("Crea un comprobante simple para descargar en formato PDF.")
     
     cliente = st.text_input("Nombre del Cliente", placeholder="Ej. Juan Pérez")
@@ -254,7 +275,7 @@ with tab3:
         
         st.success("¡Boleta lista para descargar!")
         st.download_button(
-            label="📥 Descargar Boleta PDF",
+            label="Descargar Boleta PDF",
             data=pdf_output,
             file_name=f"Boleta_{cliente.replace(' ', '_')}.pdf",
             mime="application/pdf"
