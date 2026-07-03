@@ -3,6 +3,9 @@ import pandas as pd
 import plotly.express as px
 from supabase import create_client, Client
 import os
+import io
+from fpdf import FPDF
+from datetime import datetime
 
 # ----------------------------------------
 # 1. CONFIGURACIÓN DE LA PÁGINA
@@ -126,7 +129,7 @@ if df_mermas.empty:
     st.stop()
 
 # Crear Pestañas (Tabs) para separar Mermas de Stocks
-tab1, tab2 = st.tabs(["📉 Análisis de Mermas", "📦 Verificación de Stock"])
+tab1, tab2, tab3 = st.tabs(["📉 Análisis de Mermas", "📦 Verificación de Stock", "🧾 Generar Boleta"])
 
 # ===== PESTAÑA 1: MERMAS =====
 with tab1:
@@ -193,3 +196,72 @@ with tab2:
         st.dataframe(inv_show.sort_values(by='stock_actual'), use_container_width=True)
     else:
         st.info("No hay datos de inventario para esta selección.")
+# ===== PESTAÑA 3: GENERAR BOLETA =====
+with tab3:
+    st.subheader("🧾 Generador Rápido de Boletas")
+    st.markdown("Crea un comprobante simple para descargar en formato PDF.")
+    
+    with st.form("form_boleta"):
+        cliente = st.text_input("Nombre del Cliente", placeholder="Ej. Juan Pérez")
+        producto = st.text_input("Producto / Descripción", placeholder="Ej. 5 kg de Manzanas")
+        monto = st.number_input("Monto Total (S/)", min_value=0.0, format="%.2f")
+        
+        submitted = st.form_submit_button("Generar PDF")
+        
+        if submitted:
+            if not cliente or not producto or monto <= 0:
+                st.error("Por favor, completa todos los campos correctamente.")
+            else:
+                # Generar PDF en memoria
+                pdf = FPDF(orientation="P", unit="mm", format="A5")
+                pdf.add_page()
+                pdf.set_font("Arial", "B", 16)
+                pdf.cell(0, 10, "COMPROBANTE DE PAGO", ln=True, align="C")
+                pdf.set_font("Arial", "", 10)
+                pdf.cell(0, 10, "Supermercados Metro - Boleta Electronica", ln=True, align="C")
+                pdf.line(10, 30, 138, 30)
+                
+                pdf.ln(10)
+                pdf.set_font("Arial", "B", 10)
+                pdf.cell(30, 10, "Fecha:")
+                pdf.set_font("Arial", "", 10)
+                pdf.cell(0, 10, datetime.now().strftime("%d/%m/%Y %H:%M"), ln=True)
+                
+                pdf.set_font("Arial", "B", 10)
+                pdf.cell(30, 10, "Cliente:")
+                pdf.set_font("Arial", "", 10)
+                pdf.cell(0, 10, cliente, ln=True)
+                
+                pdf.line(10, 55, 138, 55)
+                pdf.ln(5)
+                
+                pdf.set_font("Arial", "B", 10)
+                pdf.cell(90, 10, "Descripcion")
+                pdf.cell(30, 10, "Importe (S/)", align="R", ln=True)
+                
+                pdf.set_font("Arial", "", 10)
+                pdf.cell(90, 10, producto)
+                pdf.cell(30, 10, f"{monto:.2f}", align="R", ln=True)
+                
+                pdf.line(10, 75, 138, 75)
+                
+                pdf.set_font("Arial", "B", 12)
+                pdf.cell(90, 15, "TOTAL:")
+                pdf.set_text_color(0, 86, 179)
+                pdf.cell(30, 15, f"S/ {monto:.2f}", align="R", ln=True)
+                
+                pdf.set_y(-30)
+                pdf.set_text_color(128, 128, 128)
+                pdf.set_font("Arial", "I", 8)
+                pdf.cell(0, 10, "Gracias por su preferencia. Documento referencial.", align="C")
+                
+                # Obtener output como string
+                pdf_output = pdf.output(dest="S").encode("latin1")
+                
+                st.success("¡Boleta generada con éxito!")
+                st.download_button(
+                    label="📥 Descargar Boleta PDF",
+                    data=pdf_output,
+                    file_name=f"Boleta_{cliente.replace(' ', '_')}.pdf",
+                    mime="application/pdf"
+                )

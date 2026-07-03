@@ -3,3 +3,4 @@ pandas
 supabase
 plotly
 streamlit-agraph
+fpdf2
