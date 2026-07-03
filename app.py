@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 from supabase import create_client, Client
 import os
-
+from streamlit_agraph import agraph, Node, Edge, Config
 # ----------------------------------------
 # 1. CONFIGURACIÓN DE LA PÁGINA
 # ----------------------------------------
@@ -126,3 +126,32 @@ else:
     # --- Tabla de Datos Crudos ---
     st.subheader("🔍 Explorador de Registros Crudos")
     st.dataframe(df[['fecha', 'nombre', 'categoria', 'motivo', 'cantidad', 'costo_perdida']].sort_values(by='fecha', ascending=False), use_container_width=True)
+
+    st.divider()
+    
+    # --- Diagrama de Base de Datos Interactivo ---
+    st.subheader("🗄️ Diagrama de Base de Datos Interactivo")
+    st.markdown("Puedes arrastrar y mover las tablas (nodos) para ver cómo están conectadas mediante llaves foráneas.")
+    
+    nodes = [
+        Node(id="TIENDAS", label="TIENDAS", size=30, shape="dot", color="#ff4b4b"),
+        Node(id="PRODUCTOS", label="PRODUCTOS", size=30, shape="dot", color="#00d2ff"),
+        Node(id="VENTAS_POS", label="VENTAS_POS", size=25, shape="dot", color="#808495"),
+        Node(id="MOVIMIENTOS", label="MOVIMIENTOS_INVENTARIO", size=25, shape="dot", color="#808495"),
+        Node(id="NIVELES", label="NIVELES_INVENTARIO", size=25, shape="dot", color="#808495"),
+        Node(id="MERMAS", label="REGISTROS_MERMAS", size=25, shape="dot", color="#808495")
+    ]
+    
+    edges = [
+        Edge(source="TIENDAS", target="VENTAS_POS", label="1:N", color="#ffffff"),
+        Edge(source="PRODUCTOS", target="VENTAS_POS", label="1:N", color="#ffffff"),
+        Edge(source="TIENDAS", target="MOVIMIENTOS", label="1:N", color="#ffffff"),
+        Edge(source="PRODUCTOS", target="MOVIMIENTOS", label="1:N", color="#ffffff"),
+        Edge(source="TIENDAS", target="NIVELES", label="1:N", color="#ffffff"),
+        Edge(source="PRODUCTOS", target="NIVELES", label="1:N", color="#ffffff"),
+        Edge(source="TIENDAS", target="MERMAS", label="1:N", color="#ffffff"),
+        Edge(source="PRODUCTOS", target="MERMAS", label="1:N", color="#ffffff")
+    ]
+    
+    config = Config(width=1000, height=500, directed=True, physics=True, hierarchical=False)
+    agraph(nodes=nodes, edges=edges, config=config)
