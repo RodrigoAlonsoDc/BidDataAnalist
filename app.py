@@ -255,8 +255,8 @@ with tab3:
                 pdf.set_font("Arial", "I", 8)
                 pdf.cell(0, 10, "Gracias por su preferencia. Documento referencial.", align="C")
                 
-                # Obtener output como string
-                pdf_output = pdf.output(dest="S").encode("latin1")
+                # Obtener output (en fpdf2 output() retorna bytearray directamente)
+                pdf_output = bytes(pdf.output())
                 
                 st.success("¡Boleta generada con éxito!")
                 st.download_button(
