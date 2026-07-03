@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 from supabase import create_client, Client
 import os
-from streamlit_agraph import agraph, Node, Edge, Config
+
 # ----------------------------------------
 # 1. CONFIGURACIÓN DE LA PÁGINA
 # ----------------------------------------
@@ -31,16 +31,18 @@ st.markdown("""
         border-radius: 10px;
         border: 1px solid #2d3142;
     }
+    /* Estilizar la barra lateral (filtros) */
+    [data-testid="stSidebar"] {
+        background-color: #161824;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # ----------------------------------------
 # 2. CONEXIÓN A SUPABASE
 # ----------------------------------------
-# Render usará las variables de entorno que configures allí
 @st.cache_resource
 def init_connection():
-    # Intenta buscar en st.secrets primero (si se usa Streamlit Cloud), sino usa variables de entorno
     try:
         url = st.secrets["SUPABASE_URL"]
         key = st.secrets["SUPABASE_KEY"]
@@ -49,109 +51,145 @@ def init_connection():
         key = os.environ.get("SUPABASE_KEY", "")
         
     if not url or not key:
-        st.error("Faltan las credenciales de Supabase. Configura SUPABASE_URL y SUPABASE_KEY en Render (Environment Variables).")
+        st.error("Faltan las credenciales de Supabase en Variables de Entorno.")
         st.stop()
     return create_client(url, key)
 
 supabase = init_connection()
 
 # ----------------------------------------
-# 3. EXTRACCIÓN DE DATOS (ETL Básico)
+# 3. EXTRACCIÓN DE DATOS
 # ----------------------------------------
-@st.cache_data(ttl=600) # Se actualiza cada 10 minutos
+@st.cache_data(ttl=600)
 def load_data():
-    # Extraer Productos
+    # Productos
     res_prod = supabase.table("productos").select("*").execute()
     df_prod = pd.DataFrame(res_prod.data)
     
-    # Extraer Mermas
+    # Mermas
     res_mermas = supabase.table("registros_mermas").select("*").execute()
     df_mermas = pd.DataFrame(res_mermas.data)
     
-    # Unir datos
+    # Niveles Inventario
+    res_inv = supabase.table("niveles_inventario").select("*").execute()
+    df_inv = pd.DataFrame(res_inv.data)
+    
+    # Cruces con Productos
+    df_m = pd.DataFrame()
+    df_i = pd.DataFrame()
+    
     if not df_mermas.empty and not df_prod.empty:
-        df_completo = df_mermas.merge(df_prod[['id', 'nombre', 'categoria', 'es_perecedero']], 
-                                      left_on='id_producto', right_on='id', how='left')
-        return df_completo
-    return pd.DataFrame()
+        df_m = df_mermas.merge(df_prod[['id', 'nombre', 'categoria']], left_on='id_producto', right_on='id', how='left')
+        
+    if not df_inv.empty and not df_prod.empty:
+        df_i = df_inv.merge(df_prod[['id', 'nombre', 'categoria']], left_on='id_producto', right_on='id', how='left')
+        
+    return df_m, df_i
 
-with st.spinner("Conectando a Data Warehouse (Supabase)..."):
-    df = load_data()
+with st.spinner("Cargando datos desde Supabase..."):
+    df_mermas, df_inv = load_data()
 
 # ----------------------------------------
-# 4. INTERFAZ Y DASHBOARD
+# 4. FILTROS (BARRA LATERAL)
+# ----------------------------------------
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Metro_Per%C3%BA_logo.svg/512px-Metro_Per%C3%BA_logo.svg.png", width=150)
+st.sidebar.title("🔍 Filtros")
+
+# Filtro de Categoría
+categorias = ["Todas"] + list(df_mermas['categoria'].dropna().unique())
+cat_filtro = st.sidebar.selectbox("Filtro por Categoría", categorias)
+
+# Aplicar filtros a los DataFrames
+if cat_filtro != "Todas":
+    mermas_filtrado = df_mermas[df_mermas['categoria'] == cat_filtro]
+    inv_filtrado = df_inv[df_inv['categoria'] == cat_filtro]
+else:
+    mermas_filtrado = df_mermas.copy()
+    inv_filtrado = df_inv.copy()
+
+# Filtro extra para motivos de merma
+motivos = ["Todos"] + list(mermas_filtrado['motivo'].dropna().unique())
+motivo_filtro = st.sidebar.selectbox("Motivo de Merma", motivos)
+
+if motivo_filtro != "Todos":
+    mermas_filtrado = mermas_filtrado[mermas_filtrado['motivo'] == motivo_filtro]
+
+
+# ----------------------------------------
+# 5. DASHBOARD PRINCIPAL Y PESTAÑAS
 # ----------------------------------------
 st.title("🛒 Dashboard de Mermas e Inventario")
 st.markdown("Sistema de Analítica de Big Data para la Mitigación de Mermas - **Supermercados Metro**")
 
-if df.empty:
-    st.warning("No hay datos disponibles en la base de datos.")
-else:
-    # --- KPIs ---
-    st.subheader("Indicadores Clave de Rendimiento (KPIs)")
+if df_mermas.empty:
+    st.warning("No hay datos disponibles.")
+    st.stop()
+
+# Crear Pestañas (Tabs) para separar Mermas de Stocks
+tab1, tab2 = st.tabs(["📉 Análisis de Mermas", "📦 Verificación de Stock"])
+
+# ===== PESTAÑA 1: MERMAS =====
+with tab1:
+    st.subheader(f"Indicadores de Mermas - {cat_filtro}")
     col1, col2, col3 = st.columns(3)
     
-    costo_total = df['costo_perdida'].sum()
-    unidades_perdidas = df['cantidad'].sum()
-    top_categoria = df.groupby('categoria')['costo_perdida'].sum().idxmax()
+    costo_total = mermas_filtrado['costo_perdida'].sum()
+    unidades_perdidas = mermas_filtrado['cantidad'].sum()
+    if not mermas_filtrado.empty:
+        top_prod = mermas_filtrado.groupby('nombre')['costo_perdida'].sum().idxmax()
+    else:
+        top_prod = "Ninguno"
     
-    col1.metric("Costo Total de Mermas", f"${costo_total:,.2f}", delta="-Impacto Financiero", delta_color="inverse")
-    col2.metric("Unidades Mermadas", f"{unidades_perdidas:,}", delta="Unidades perdidas en el año", delta_color="off")
-    col3.metric("Categoría más crítica", f"{top_categoria}", delta="Mayor generador de pérdidas", delta_color="inverse")
+    col1.metric("Costo de Mermas", f"${costo_total:,.2f}", delta="-Impacto Financiero", delta_color="inverse")
+    col2.metric("Unidades Perdidas", f"{unidades_perdidas:,}")
+    col3.metric("Producto más afectado", f"{top_prod}", delta="Pérdida Crítica", delta_color="inverse")
     
     st.divider()
 
-    # --- Gráficos Interactivos ---
-    col_chart1, col_chart2 = st.columns(2)
-    
-    with col_chart1:
-        st.markdown("### 💸 Costo de Mermas por Categoría")
-        costo_cat = df.groupby('categoria')['costo_perdida'].sum().reset_index()
-        fig1 = px.bar(costo_cat, x='categoria', y='costo_perdida', 
-                      color='categoria', text_auto='.2s',
-                      color_discrete_sequence=px.colors.sequential.Magma)
-        fig1.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig1, use_container_width=True)
+    # Gráficos
+    col_c1, col_c2 = st.columns(2)
+    with col_c1:
+        st.markdown("### 💸 Costo por Producto (Top 10)")
+        if not mermas_filtrado.empty:
+            costo_prod = mermas_filtrado.groupby('nombre')['costo_perdida'].sum().reset_index().sort_values(by='costo_perdida', ascending=False).head(10)
+            fig1 = px.bar(costo_prod, x='nombre', y='costo_perdida', color='nombre', color_discrete_sequence=px.colors.sequential.Magma)
+            fig1.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white", showlegend=False)
+            st.plotly_chart(fig1, use_container_width=True)
 
-    with col_chart2:
-        st.markdown("### ⚠️ Motivos Principales de Merma")
-        motivos = df.groupby('motivo')['cantidad'].sum().reset_index()
-        fig2 = px.pie(motivos, values='cantidad', names='motivo', 
-                      hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
-        fig2.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
-        st.plotly_chart(fig2, use_container_width=True)
+    with col_c2:
+        st.markdown("### ⚠️ Motivos")
+        if not mermas_filtrado.empty:
+            motivos_df = mermas_filtrado.groupby('motivo')['cantidad'].sum().reset_index()
+            fig2 = px.pie(motivos_df, values='cantidad', names='motivo', hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
+            fig2.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+            st.plotly_chart(fig2, use_container_width=True)
+            
+    st.subheader("🔍 Tabla de Registros de Mermas")
+    st.dataframe(mermas_filtrado[['fecha', 'nombre', 'categoria', 'motivo', 'cantidad', 'costo_perdida']].sort_values(by='fecha', ascending=False), use_container_width=True)
+
+
+# ===== PESTAÑA 2: STOCKS =====
+with tab2:
+    st.subheader(f"Verificación de Stocks y Alertas - {cat_filtro}")
+    st.markdown("Monitoreo del Nivel de Inventario contra el **Umbral Mínimo de Seguridad**.")
+    
+    if not inv_filtrado.empty:
+        # Calcular Alerta
+        inv_show = inv_filtrado[['nombre', 'categoria', 'stock_actual', 'umbral_minimo', 'fecha_actualizacion']].copy()
+        inv_show['Estado'] = inv_show.apply(lambda row: '⚠️ PELIGRO (Bajo Umbral)' if row['stock_actual'] < row['umbral_minimo'] else '✅ OK', axis=1)
         
-    st.divider()
-    
-    # --- Tabla de Datos Crudos ---
-    st.subheader("🔍 Explorador de Registros Crudos")
-    st.dataframe(df[['fecha', 'nombre', 'categoria', 'motivo', 'cantidad', 'costo_perdida']].sort_values(by='fecha', ascending=False), use_container_width=True)
-
-    st.divider()
-    
-    # --- Diagrama de Base de Datos Interactivo ---
-    st.subheader("🗄️ Diagrama de Base de Datos Interactivo")
-    st.markdown("Puedes arrastrar y mover las tablas (nodos) para ver cómo están conectadas mediante llaves foráneas.")
-    
-    nodes = [
-        Node(id="TIENDAS", label="TIENDAS", size=30, shape="dot", color="#ff4b4b"),
-        Node(id="PRODUCTOS", label="PRODUCTOS", size=30, shape="dot", color="#00d2ff"),
-        Node(id="VENTAS_POS", label="VENTAS_POS", size=25, shape="dot", color="#808495"),
-        Node(id="MOVIMIENTOS", label="MOVIMIENTOS_INVENTARIO", size=25, shape="dot", color="#808495"),
-        Node(id="NIVELES", label="NIVELES_INVENTARIO", size=25, shape="dot", color="#808495"),
-        Node(id="MERMAS", label="REGISTROS_MERMAS", size=25, shape="dot", color="#808495")
-    ]
-    
-    edges = [
-        Edge(source="TIENDAS", target="VENTAS_POS", label="1:N", color="#ffffff"),
-        Edge(source="PRODUCTOS", target="VENTAS_POS", label="1:N", color="#ffffff"),
-        Edge(source="TIENDAS", target="MOVIMIENTOS", label="1:N", color="#ffffff"),
-        Edge(source="PRODUCTOS", target="MOVIMIENTOS", label="1:N", color="#ffffff"),
-        Edge(source="TIENDAS", target="NIVELES", label="1:N", color="#ffffff"),
-        Edge(source="PRODUCTOS", target="NIVELES", label="1:N", color="#ffffff"),
-        Edge(source="TIENDAS", target="MERMAS", label="1:N", color="#ffffff"),
-        Edge(source="PRODUCTOS", target="MERMAS", label="1:N", color="#ffffff")
-    ]
-    
-    config = Config(width=1000, height=500, directed=True, physics=True, hierarchical=False)
-    agraph(nodes=nodes, edges=edges, config=config)
+        # Resumen de alertas
+        alertas_count = len(inv_show[inv_show['Estado'].str.contains('PELIGRO')])
+        st.error(f"Se detectaron **{alertas_count}** productos por debajo de su umbral mínimo de seguridad en la categoría seleccionada.")
+        
+        # Gráfico comparativo
+        st.markdown("### Comparativa: Stock Actual vs Umbral de Seguridad")
+        fig3 = px.bar(inv_show.head(30), x='nombre', y=['stock_actual', 'umbral_minimo'], barmode='group',
+                      color_discrete_map={'stock_actual': '#00d2ff', 'umbral_minimo': '#ff4b4b'})
+        fig3.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+        st.plotly_chart(fig3, use_container_width=True)
+        
+        st.subheader("🔍 Tabla de Inventarios")
+        st.dataframe(inv_show.sort_values(by='stock_actual'), use_container_width=True)
+    else:
+        st.info("No hay datos de inventario para esta selección.")
